@@ -12,17 +12,17 @@ interface Props {
 }
 
 const typeColors: Record<string, string> = {
-  "user": "border-l-green-500 bg-green-500/5",
-  "user-transcript": "border-l-yellow-500 bg-yellow-500/5",
-  "assistant": "border-l-blue-500 bg-blue-500/5",
-  "system": "border-l-red-500 bg-red-500/5",
+  user: "border-l-green-500 bg-green-50",
+  "user-transcript": "border-l-amber-500 bg-amber-50",
+  assistant: "border-l-blue-500 bg-blue-50",
+  system: "border-l-red-500 bg-red-50",
 }
 
 const typeLabels: Record<string, string> = {
-  "user": "USER",
-  "user-transcript": "USER SPEECH",
-  "assistant": "GEMINI SPEECH",
-  "system": "SYSTEM",
+  user: "YOU",
+  "user-transcript": "YOUR SPEECH",
+  assistant: "GEMINI",
+  system: "SYSTEM",
 }
 
 export default function Chat({ messages, onSend }: Props) {
@@ -41,18 +41,11 @@ export default function Chat({ messages, onSend }: Props) {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="bg-gray-800/40 rounded-xl overflow-hidden border border-gray-700/50"
-    >
-      <div className="px-4 py-3 border-b border-gray-700/50">
-        <h2 className="text-sm font-semibold text-gray-300">Chat</h2>
-      </div>
-
-      <div className="h-64 overflow-y-auto p-4 space-y-2">
+    <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden flex flex-col">
+      {/* Messages */}
+      <div className="h-80 overflow-y-auto p-4 space-y-2">
         {messages.length === 0 && (
-          <p className="text-sm text-gray-500 text-center pt-8">
+          <p className="text-sm text-slate-400 text-center pt-12">
             Connect to Gemini to start chatting
           </p>
         )}
@@ -64,7 +57,7 @@ export default function Chat({ messages, onSend }: Props) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ duration: 0.2 }}
               className={`text-sm px-3 py-2 rounded-lg border-l-2 ${
-                typeColors[msg.type] || "border-l-gray-500 bg-gray-500/5"
+                typeColors[msg.type] || "border-l-slate-300 bg-slate-50"
               }`}
             >
               <span className="text-[10px] font-bold uppercase tracking-wider opacity-60 block mb-0.5">
@@ -77,23 +70,24 @@ export default function Chat({ messages, onSend }: Props) {
         <div ref={bottomRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="flex gap-2 p-3 border-t border-gray-700/50">
+      {/* Input */}
+      <form onSubmit={handleSubmit} className="flex gap-2 p-3 border-t border-slate-100 bg-slate-50/50">
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type a message..."
-          className="flex-1 bg-gray-700/50 border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+          className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-shadow"
         />
         <motion.button
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           type="submit"
-          className="px-4 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 shadow-lg shadow-blue-500/20 transition-all"
+          className="px-5 py-2 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-colors"
         >
           Send
         </motion.button>
       </form>
-    </motion.div>
+    </div>
   )
 }

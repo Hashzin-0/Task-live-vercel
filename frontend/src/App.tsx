@@ -3,16 +3,41 @@ import { motion, AnimatePresence } from "framer-motion"
 import { GeminiLiveAPI, MultimodalLiveResponseType, type ResponseMessage } from "./lib/geminilive"
 import { AudioStreamer, VideoStreamer, ScreenCapture, AudioPlayer } from "./lib/mediaUtils"
 import { ShowAlertTool, AddCSSStyleTool } from "./lib/tools"
-import ApiConfigSection from "./components/ApiConfigSection"
-import MediaControls from "./components/MediaControls"
+import SettingsModal from "./components/SettingsModal"
+import type { Settings } from "./components/SettingsModal"
+import FloatingButtons from "./components/FloatingButtons"
 import Chat from "./components/Chat"
+import MediaControls from "./components/MediaControls"
+
+const defaultSettings: Settings = {
+  model: "gemini-2.5-flash-native-audio-latest",
+  systemInstructions: "You are a helpful assistant. Be concise and friendly.",
+  voice: "Puck",
+  temperature: 1.0,
+  enableGrounding: false,
+  enableWhisper: false,
+  enableThinking: false,
+  enableAlertTool: true,
+  enableCssStyleTool: true,
+  enableInputTranscription: true,
+  enableOutputTranscription: true,
+  disableActivityDetection: false,
+  silenceDuration: 500,
+  prefixPadding: 500,
+  endSpeechSensitivity: "END_SENSITIVITY_UNSPECIFIED",
+  startSpeechSensitivity: "START_SENSITIVITY_UNSPECIFIED",
+  activityHandling: "ACTIVITY_HANDLING_UNSPECIFIED",
+  volume: 80,
+}
 
 export default function App() {
+  const [settings, setSettings] = useState<Settings>(defaultSettings)
   const [connectionStatus, setConnectionStatus] = useState("Not connected")
   const [isConnected, setIsConnected] = useState(false)
   const [messages, setMessages] = useState<{ text: string; type: string }[]>([])
   const [debugInfo, setDebugInfo] = useState("Ready to connect...")
   const [setupJson, setSetupJson] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [isAudioStreaming, setIsAudioStreaming] = useState(false)
   const [isVideoStreaming, setIsVideoStreaming] = useState(false)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
@@ -23,27 +48,17 @@ export default function App() {
   const videoStreamerRef = useRef<VideoStreamer | null>(null)
   const screenCaptureRef = useRef<ScreenCapture | null>(null)
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null)
+  const preWhisperVolumeRef = useRef(80)
 
-  const [settings, setSettings] = useState({
-    model: "gemini-2.5-flash-native-audio-latest",
-    systemInstructions: "You are a helpful assistant. Be concise and friendly.",
-    voice: "Puck",
-    temperature: 1.0,
-    enableGrounding: false,
-    enableWhisper: false,
-    enableThinking: false,
-    enableAlertTool: true,
-    enableCssStyleTool: true,
-    enableInputTranscription: true,
-    enableOutputTranscription: true,
-    disableActivityDetection: false,
-    silenceDuration: 500,
-    prefixPadding: 500,
-    endSpeechSensitivity: "END_SENSITIVITY_UNSPECIFIED",
-    startSpeechSensitivity: "START_SENSITIVITY_UNSPECIFIED",
-    activityHandling: "ACTIVITY_HANDLING_UNSPECIFIED",
-    volume: 80,
-  })
+  // Auto-adjust volume when whisper toggles
+  useEffect(() => {
+    if (settings.enableWhisper) {
+      preWhisperVolumeRef.current = settings.volume > 25 ? settings.volume : 80
+      updateVolume(25)
+    } else if (settings.volume === 25) {
+      updateVolume(preWhisperVolumeRef.current)
+    }
+  }, [settings.enableWhisper])
 
   const addMessage = useCallback((text: string, type: string) => {
     setMessages((prev) => [...prev, { text, type }])
@@ -97,15 +112,11 @@ export default function App() {
 
         case MultimodalLiveResponseType.INPUT_TRANSCRIPTION:
           if (message.data.text) detectVoiceCommands(message.data.text)
-          if (!message.data.finished) {
-            addMessage(message.data.text, "user-transcript")
-          }
+          if (!message.data.finished) addMessage(message.data.text, "user-transcript")
           break
 
         case MultimodalLiveResponseType.OUTPUT_TRANSCRIPTION:
-          if (!message.data.finished) {
-            addMessage(message.data.text, "assistant")
-          }
+          if (!message.data.finished) addMessage(message.data.text, "assistant")
           break
 
         case MultimodalLiveResponseType.SETUP_COMPLETE:
@@ -115,7 +126,7 @@ export default function App() {
           }
           break
 
-        case MultimodalLiveResponseType.TOOL_CALL:
+        case MultimodalLiveResponseType.TOOL_CALL: {
           const functionCalls = message.data.functionCalls
           const responses: { id?: string; name: string; response: Record<string, any> }[] = []
           for (const fc of functionCalls) {
@@ -128,6 +139,7 @@ export default function App() {
           }
           clientRef.current?.sendToolResponse(responses)
           break
+        }
 
         case MultimodalLiveResponseType.TURN_COMPLETE:
           updateDebug("Turn complete")
@@ -168,16 +180,11 @@ export default function App() {
         end_of_speech_sensitivity: settings.endSpeechSensitivity,
         start_of_speech_sensitivity: settings.startSpeechSensitivity,
       }
-
       client.activityHandling = settings.activityHandling
 
       if (!settings.enableGrounding) {
-        if (settings.enableAlertTool) {
-          client.addFunction(new ShowAlertTool())
-        }
-        if (settings.enableCssStyleTool) {
-          client.addFunction(new AddCSSStyleTool())
-        }
+        if (settings.enableAlertTool) client.addFunction(new ShowAlertTool())
+        if (settings.enableCssStyleTool) client.addFunction(new AddCSSStyleTool())
       }
 
       client.onReceiveResponse = handleMessage
@@ -190,7 +197,6 @@ export default function App() {
         setIsConnected(false)
         disconnect()
       }
-
       client.onOpen = () => {
         setConnectionStatus("Connected")
         setIsConnected(true)
@@ -320,58 +326,51 @@ export default function App() {
     [addMessage, detectVoiceCommands]
   )
 
+  // Fixed: separate state update from side effects
   const updateSetting = useCallback(
-    <K extends keyof typeof settings>(key: K, value: (typeof settings)[K]) => {
-      setSettings((prev) => {
-        const updated = { ...prev, [key]: value }
-        const c = clientRef.current
-        if (!c?.connected) return updated
+    <K extends keyof Settings>(key: K, value: Settings[K]) => {
+      setSettings((prev) => ({ ...prev, [key]: value }))
 
-        switch (key) {
-          case "enableWhisper":
-            c.setWhisperMode(value as boolean)
-            break
-          case "enableThinking":
-            c.setThinkingMode(value as boolean)
-            break
-          case "voice":
-            c.setVoice(value as string)
-            break
-        }
-        return updated
-      })
+      const c = clientRef.current
+      if (!c?.connected) return
+
+      switch (key) {
+        case "enableWhisper":
+          c.setWhisperMode(value as boolean)
+          break
+        case "enableThinking":
+          c.setThinkingMode(value as boolean)
+          break
+        case "voice":
+          c.setVoice(value as string)
+          break
+      }
     },
     []
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-gray-100 p-6">
+    <div className="min-h-screen bg-slate-50">
+      {/* Header */}
       <motion.header
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-6"
+        className="bg-indigo-600 text-white px-6 py-4 shadow-md relative overflow-hidden"
       >
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-          Gemini Live API
-        </h1>
-        <p className="text-sm text-gray-400">Vanilla TypeScript + React + Audio/Video Streaming</p>
-      </motion.header>
-
-      <div className="flex gap-6 flex-col lg:flex-row">
-        <div className="w-full lg:w-1/2 space-y-4">
-          <ApiConfigSection
-            settings={settings}
-            updateSetting={updateSetting}
-            isConnected={isConnected}
-          />
-
-          <div className="flex items-center gap-4">
+        <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/5 rounded-full blur-2xl" />
+        <div className="absolute -bottom-8 -left-8 w-24 h-24 bg-white/5 rounded-full blur-xl" />
+        <div className="relative z-10 flex items-center justify-between max-w-4xl mx-auto">
+          <div>
+            <h1 className="text-2xl font-bold">Gemini Live Voice</h1>
+            <p className="text-sm text-indigo-200">Real-time voice AI assistant</p>
+          </div>
+          <div className="flex items-center gap-3">
             <motion.button
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={connect}
               disabled={isConnected}
-              className="px-6 py-2.5 rounded-xl font-semibold bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 transition-all"
+              className="px-5 py-2 rounded-xl text-sm font-medium bg-white text-indigo-700 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
             >
               Connect
             </motion.button>
@@ -380,76 +379,85 @@ export default function App() {
               whileTap={{ scale: 0.97 }}
               onClick={disconnect}
               disabled={!isConnected}
-              className="px-6 py-2.5 rounded-xl font-semibold bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-red-500/20 transition-all"
+              className="px-5 py-2 rounded-xl text-sm font-medium bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-colors"
             >
               Disconnect
             </motion.button>
-
-            <AnimatePresence mode="wait">
-              <motion.span
-                key={connectionStatus}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0 }}
-                className={`text-sm px-3 py-1 rounded-full ${
-                  isConnected
-                    ? "bg-green-500/20 text-green-400"
-                    : connectionStatus.includes("failed") || connectionStatus.includes("Error")
-                    ? "bg-red-500/20 text-red-400"
-                    : "bg-gray-700 text-gray-300"
-                }`}
-              >
-                {connectionStatus}
-              </motion.span>
-            </AnimatePresence>
           </div>
-
-          <AnimatePresence>
-            {setupJson && (
-              <motion.details
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="bg-gray-800/50 rounded-xl p-4"
-              >
-                <summary className="text-sm font-medium text-gray-300 cursor-pointer">
-                  Setup Message JSON
-                </summary>
-                <pre className="mt-2 text-xs text-gray-400 overflow-x-auto whitespace-pre-wrap">
-                  {setupJson}
-                </pre>
-              </motion.details>
-            )}
-          </AnimatePresence>
         </div>
+      </motion.header>
 
-        <div className="w-full lg:w-1/2 space-y-4">
-          <MediaControls
-            isAudioStreaming={isAudioStreaming}
-            isVideoStreaming={isVideoStreaming}
-            isScreenSharing={isScreenSharing}
-            volume={settings.volume}
-            onToggleAudio={toggleAudio}
-            onToggleVideo={toggleVideo}
-            onToggleScreen={toggleScreen}
-            onVolumeChange={updateVolume}
-            videoPreviewRef={videoPreviewRef}
+      {/* Main content */}
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
+        {/* Setup JSON (collapsible) */}
+        <AnimatePresence>
+          {setupJson && (
+            <motion.details
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4"
+            >
+              <summary className="text-xs font-semibold uppercase tracking-wider text-slate-500 cursor-pointer select-none">
+                Setup Message JSON
+              </summary>
+              <pre className="mt-2 text-xs text-slate-400 overflow-x-auto whitespace-pre-wrap">
+                {setupJson}
+              </pre>
+            </motion.details>
+          )}
+        </AnimatePresence>
+
+        {/* Chat */}
+        <Chat messages={messages} onSend={sendMessage} />
+
+        {/* Media Controls */}
+        <MediaControls
+          isAudioStreaming={isAudioStreaming}
+          isVideoStreaming={isVideoStreaming}
+          isScreenSharing={isScreenSharing}
+          volume={settings.volume}
+          connectionStatus={connectionStatus}
+          isConnected={isConnected}
+          onToggleAudio={toggleAudio}
+          onToggleVideo={toggleVideo}
+          onToggleScreen={toggleScreen}
+          onVolumeChange={updateVolume}
+          videoPreviewRef={videoPreviewRef}
+        />
+
+        {/* Debug */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4"
+        >
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+            Debug Info
+          </h3>
+          <pre className="text-xs text-slate-400 font-mono">{debugInfo}</pre>
+        </motion.div>
+      </main>
+
+      {/* Floating Buttons */}
+      <FloatingButtons
+        isAudioStreaming={isAudioStreaming}
+        isConnected={isConnected}
+        onToggleAudio={toggleAudio}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {settingsOpen && (
+          <SettingsModal
+            open={settingsOpen}
+            settings={settings}
+            onClose={() => setSettingsOpen(false)}
+            onChange={updateSetting}
           />
-
-          <Chat messages={messages} onSend={sendMessage} />
-
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-gray-800/40 rounded-xl p-4"
-          >
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
-              Debug Info
-            </h3>
-            <pre className="text-xs text-gray-400 font-mono">{debugInfo}</pre>
-          </motion.div>
-        </div>
-      </div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
