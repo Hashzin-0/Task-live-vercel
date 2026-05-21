@@ -22,6 +22,8 @@ function initDOM() {
     "enableInputTranscription",
     "enableOutputTranscription",
     "enableGrounding",
+    "enableWhisper",
+    "enableThinking",
     "enableAlertTool",
     "enableCssStyleTool",
     "voiceSelect",
@@ -128,6 +130,7 @@ async function connect() {
     state.client = new GeminiLiveAPI(token, model);
 
     // Configure settings
+    state.client.baseSystemInstructions = elements.systemInstructions.value;
     state.client.systemInstructions = elements.systemInstructions.value;
     state.client.inputAudioTranscription =
       elements.enableInputTranscription.checked;
@@ -241,6 +244,31 @@ function handleMessage(message) {
 
     case MultimodalLiveResponseType.INPUT_TRANSCRIPTION:
       console.log("Input transcription:", message.data);
+      if (message.data.text && state.client && state.client.connected) {
+        const text = message.data.text.toLowerCase();
+
+        // Whisper voice commands
+        if (/\b(whisper|sussurr|fala baixo|speak quiet|quiet mode|soft voice|fala baixinho)\b/i.test(text) && !state.client.isWhisperMode) {
+          state.client.setWhisperMode(true);
+          elements.enableWhisper.checked = true;
+          addMessage("[Whisper mode activated by voice]", "system");
+        } else if (/\b(stop whispering|normal voice|fala normal|para de sussurr|normal mode|no whisper)\b/i.test(text) && state.client.isWhisperMode) {
+          state.client.setWhisperMode(false);
+          elements.enableWhisper.checked = false;
+          addMessage("[Normal voice restored by voice]", "system");
+        }
+
+        // Thinking voice commands
+        if (/\b(think|pensar|think deeply|deep thought|raciocínio|complex|hard question|modo pensar)\b/i.test(text) && !state.client.isThinkingMode) {
+          state.client.setThinkingMode(true);
+          elements.enableThinking.checked = true;
+          addMessage("[Thinking mode activated by voice]", "system");
+        } else if (/\b(stop thinking|normal mode|para de pensar|no thinking|quick answer|resposta rápida)\b/i.test(text) && state.client.isThinkingMode) {
+          state.client.setThinkingMode(false);
+          elements.enableThinking.checked = false;
+          addMessage("[Thinking mode deactivated by voice]", "system");
+        }
+      }
       if (!message.data.finished) {
         addMessage(message.data.text, "user-transcript", (append = true));
       }
@@ -319,6 +347,16 @@ function handleMessage(message) {
 // Connection handlers
 function handleOpen() {
   updateStatus("connectionStatus", "Connected");
+
+  // Apply initial whisper/thinking states after connection
+  if (state.client) {
+    if (elements.enableWhisper.checked) {
+      state.client.setWhisperMode(true);
+    }
+    if (elements.enableThinking.checked) {
+      state.client.setThinkingMode(true);
+    }
+  }
 }
 
 function handleClose() {
@@ -448,6 +486,27 @@ function sendMessage() {
   if (!message) return;
 
   if (state.client) {
+    // Detect voice commands in text input too
+    const text = message.toLowerCase();
+    if (/\b(whisper|sussurr|fala baixo|speak quiet|quiet mode|soft voice|fala baixinho)\b/i.test(text) && state.client.isWhisperMode === false) {
+      state.client.setWhisperMode(true);
+      elements.enableWhisper.checked = true;
+      addMessage("[Whisper mode activated]", "system");
+    } else if (/\b(stop whispering|normal voice|fala normal|para de sussurr|normal mode|no whisper)\b/i.test(text) && state.client.isWhisperMode === true) {
+      state.client.setWhisperMode(false);
+      elements.enableWhisper.checked = false;
+      addMessage("[Normal voice restored]", "system");
+    }
+    if (/\b(think|pensar|deep thought|raciocínio|complex question|hard question|modo pensar)\b/i.test(text) && state.client.isThinkingMode === false) {
+      state.client.setThinkingMode(true);
+      elements.enableThinking.checked = true;
+      addMessage("[Thinking mode activated]", "system");
+    } else if (/\b(stop thinking|normal mode|para de pensar|no thinking|quick answer|resposta rápida)\b/i.test(text) && state.client.isThinkingMode === true) {
+      state.client.setThinkingMode(false);
+      elements.enableThinking.checked = false;
+      addMessage("[Thinking mode deactivated]", "system");
+    }
+
     addMessage(message, "user");
     state.client.sendTextMessage(message);
     elements.chatInput.value = "";
@@ -501,6 +560,25 @@ function initEventListeners() {
   elements.sendBtn.addEventListener("click", sendMessage);
   elements.volume.addEventListener("input", updateVolume);
   elements.temperature.addEventListener("input", updateTemperature);
+
+  // Mid-call settings via session_update
+  elements.enableWhisper.addEventListener("change", (e) => {
+    if (state.client && state.client.connected) {
+      state.client.setWhisperMode(e.target.checked);
+    }
+  });
+
+  elements.enableThinking.addEventListener("change", (e) => {
+    if (state.client && state.client.connected) {
+      state.client.setThinkingMode(e.target.checked);
+    }
+  });
+
+  elements.voiceSelect.addEventListener("change", (e) => {
+    if (state.client) {
+      state.client.setVoice(e.target.value);
+    }
+  });
 
   elements.chatInput.addEventListener("keypress", (e) => {
     if (e.key === "Enter") sendMessage();

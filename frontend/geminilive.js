@@ -140,9 +140,12 @@ class GeminiLiveAPI {
 
     this.responseModalities = ["AUDIO"];
     this.systemInstructions = "";
+    this.baseSystemInstructions = "";
     this.googleGrounding = false;
     this.voiceName = "Puck"; // Default voice
     this.temperature = 1.0; // Default temperature
+    this.isWhisperMode = false;
+    this.isThinkingMode = false;
     this.inputAudioTranscription = false;
     this.outputAudioTranscription = false;
     this.enableFunctionCalls = false;
@@ -211,9 +214,54 @@ class GeminiLiveAPI {
   setVoice(voiceName) {
     console.log("setting voice: ", voiceName);
     this.voiceName = voiceName;
+    if (this.connected) {
+      this.sendSessionUpdate({
+        generation_config: {
+          speech_config: {
+            voice_config: {
+              prebuilt_voice_config: {
+                voice_name: voiceName
+              }
+            }
+          }
+        }
+      });
+      console.log("🗣️ Voice changed mid-call to:", voiceName);
+    }
   }
 
+  sendSessionUpdate(updateConfig) {
+    const message = { session_update: updateConfig };
+    this.sendMessage(message);
+  }
 
+  setWhisperMode(enabled) {
+    const whisperPrompt = "\n\nIMPORTANT: You must speak in a whisper, very quietly and softly, as if trying not to be overheard. Keep your voice low and gentle at all times.";
+    this.systemInstructions = enabled
+      ? this.baseSystemInstructions + whisperPrompt
+      : this.baseSystemInstructions;
+    this.isWhisperMode = enabled;
+    if (this.connected) {
+      this.sendSessionUpdate({
+        system_instruction: { parts: [{ text: this.systemInstructions }] }
+      });
+    }
+    console.log(enabled ? "🤫 Whisper mode activated" : "🔊 Normal voice restored");
+  }
+
+  setThinkingMode(enabled, budget = 1024) {
+    this.isThinkingMode = enabled;
+    if (this.connected) {
+      this.sendSessionUpdate({
+        generation_config: {
+          thinking_config: {
+            thinking_budget: enabled ? budget : 0
+          }
+        }
+      });
+    }
+    console.log(enabled ? "🧠 Thinking mode activated (budget: " + budget + ")" : "⚡ Thinking mode deactivated");
+  }
 
   setInputAudioTranscription(enabled) {
     console.log("setting input audio transcription: ", enabled);
