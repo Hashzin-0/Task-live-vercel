@@ -76,8 +76,8 @@ async def serve_static_file(request):
     if not path or path == "/":
         path = "index.html"
 
-    # Get the full file path - serve from frontend folder
-    frontend_dir = os.path.join(os.path.dirname(__file__), "frontend")
+    # Get the full file path - serve from frontend dist folder
+    frontend_dir = os.path.join(os.path.dirname(__file__), "frontend", "dist")
     file_path = os.path.join(frontend_dir, path)
 
     # Check if file exists
