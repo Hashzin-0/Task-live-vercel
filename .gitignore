@@ -1,6 +1,9 @@
 __pycache__
+*.pyc
 .venv
 .env
-.next
+.vscode
+.idea
+.DS_Store
 dist
-node_modules
+*.egg-info

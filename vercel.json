@@ -1,0 +1,17 @@
+{
+  "builds": [
+    { "src": "api/**/*.py", "use": "@vercel/python" },
+    { "src": "frontend/**", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/", "dest": "/frontend/index.html" },
+    { "src": "/(.*)", "dest": "/frontend/$1" }
+  ],
+  "functions": {
+    "api/**/*.py": {
+      "maxDuration": 10,
+      "memory": 256
+    }
+  }
+}
