@@ -286,7 +286,7 @@ class GeminiLiveAPI {
     this.webSocket = new WebSocket(this.serviceUrl);
 
     this.webSocket.onclose = (event) => {
-      console.log("websocket closed: ", event);
+      console.log("websocket closed - code:", event.code, "reason:", event.reason, "wasClean:", event.wasClean);
       this.connected = false;
       this.onClose();
     };
@@ -367,7 +367,7 @@ class GeminiLiveAPI {
       console.log(
         "Google Grounding enabled, removing custom function calls if any."
       );
-      sessionSetupMessage.setup.tools = [{ googleSearch: {} }];
+      sessionSetupMessage.setup.tools = [{ google_search: {} }];
     }
 
 
